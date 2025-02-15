@@ -1,0 +1,22 @@
+touch TOOLS.md
+# CI/CD Pipeline Tools
+
+## 1. Version Control
+- GitHub
+- Git
+
+## 2. Smart Contract Development
+- Hardhat
+- Foundry
+- Truffle
+- Solhint
+
+## 3. Security & Vulnerability Scanning
+- Slither
+- MythX
+- CodeQL
+
+## 4. Deployment & Blockchain
+- Infura
+- Alchemy
+- Hardhat Deploy
