@@ -26,3 +26,6 @@ jobs:
 
       - name: Run Hardhat Tests
         run: npx hardhat test
+        
+- name: Start Prometheus for Monitoring
+  run: docker run -d -p 9090:9090 prom/prometheus
