@@ -29,3 +29,6 @@ jobs:
         
 - name: Start Prometheus for Monitoring
   run: docker run -d -p 9090:9090 prom/prometheus
+  
+- name: Deploy to Kubernetes via ArgoCD
+  run: argocd app sync my-contract-app
