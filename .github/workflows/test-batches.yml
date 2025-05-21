@@ -1,0 +1,195 @@
+# .github/workflows/test-batches.yml
+name: CI/CD Pipeline - Smart Contract Testing
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-batches:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        testFile:
+          - test/batch1.js
+          - test/batch2.js
+          - test/batch3.js
+          - test/batch4.js
+          - test/batch5.js
+          - test/batch6.js
+          - test/batch7.js
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Compile Contracts
+        run: npx hardhat compile
+
+      - name: Run Batch Tests
+        run: npx hardhat test ${{ matrix.testFile }}
+
+      - name: Push Metrics to Prometheus Pushgateway
+        run: |
+          echo "test_duration_seconds{job=\"${{ matrix.testFile }}\"} $(cat metrics.out)" | curl --data-binary @- http://pushgateway:9091/metrics/job/${{ matrix.testFile }}
+        if: always()
+
+---
+# .github/workflows/deploy-canary.yml
+name: Canary Deployment (ArgoCD)
+
+on:
+  workflow_run:
+    workflows: ["CI/CD Pipeline - Smart Contract Testing"]
+    types:
+      - completed
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Sync ArgoCD Application
+        run: |
+          argocd login argocd.example.com --username admin --password ${{ secrets.ARGOCD_PASSWORD }}
+          argocd app sync smart-contract-app
+          argocd app wait smart-contract-app
+
+---
+# .github/workflows/lint-and-slither.yml
+name: Static Analysis - Slither & Lint
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Install Slither
+        run: |
+          sudo apt-get update
+          sudo apt-get install python3-pip -y
+          pip3 install slither-analyzer
+
+      - name: Run Slither Analysis
+        run: slither ./contracts
+
+      - name: Lint Contracts
+        run: npx solhint 'contracts/**/*.sol'
+
+---
+# .github/workflows/fuzz-echidna.yml
+name: Echidna Fuzzing
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Install Echidna
+        run: |
+          sudo apt-get update
+          sudo apt-get install cabal-install -y
+          cabal update
+          cabal install echidna
+
+      - name: Compile with Echidna Flags
+        run: solc-select install 0.8.18 && solc-select use 0.8.18
+
+      - name: Run Echidna
+        run: |
+          echidna-test contracts/StablecoinReserve.sol --contract StablecoinReserve --test-mode assertion --max-steps 100000 --test-limit 300
+
+---
+# .github/workflows/formal-verification-certora.yml
+name: Certora Formal Verification
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Certora CLI
+        run: |
+          curl -L https://certora-pkg.s3.amazonaws.com/latest/certora.zip -o certora.zip
+          unzip certora.zip -d certora
+          chmod +x certora/bin/certoraRun
+
+      - name: Run Certora on TimelockWallet
+        run: |
+          certora/bin/certoraRun contracts/TimelockWallet.sol --verify TimelockWallet:certora/specs/TimelockWallet.spec --solc solc8.18
+
+      - name: Run Certora on MultiSigWallet
+        run: |
+          certora/bin/certoraRun contracts/MultiSigWallet.sol --verify MultiSigWallet:certora/specs/MultiSigWallet.spec --solc solc8.18
+
+      - name: Run Certora on Escrow
+        run: |
+          certora/bin/certoraRun contracts/Escrow.sol --verify Escrow:certora/specs/Escrow.spec --solc solc8.18
+
+---
+# .github/workflows/multichain-deploy.yml
+name: Multi-Chain Deployment
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        network: [goerli, mumbai, bscTestnet]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Compile Contracts
+        run: npx hardhat compile
+
+      - name: Deploy to ${{ matrix.network }}
+        run: |
+          npx hardhat run scripts/deploy.js --network ${{ matrix.network }}
